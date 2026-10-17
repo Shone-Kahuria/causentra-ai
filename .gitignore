@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.db
+.env
+Causentra_AI_Act_III_Complete_Project_Documentation.pdf

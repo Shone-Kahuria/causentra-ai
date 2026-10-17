@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      CAUSENTRA_DB: /data/causentra.db
+      CAUSENTRA_ANALYST_TOKEN: ${CAUSENTRA_ANALYST_TOKEN:?set analyst token}
+      CAUSENTRA_MANAGER_TOKEN: ${CAUSENTRA_MANAGER_TOKEN:?set manager token}
+      CAUSENTRA_TOKENS_JSON: ${CAUSENTRA_TOKENS_JSON:-{}}
+      AMD_CHAT_COMPLETIONS_URL: ${AMD_CHAT_COMPLETIONS_URL:-}
+      AMD_MODEL_ID: ${AMD_MODEL_ID:-}
+      AMD_API_KEY: ${AMD_API_KEY:-}
+      EVOLUS_API_KEY: ${EVOLUS_API_KEY:-}
+      EVOLUS_APPLICATION_ID: ${EVOLUS_APPLICATION_ID:-}
+      EVOLUS_WORKFLOW_ID: ${EVOLUS_WORKFLOW_ID:-}
+      EVOLUS_AI_TOOL: ${EVOLUS_AI_TOOL:-}
+      EVOLUS_SANDBOX_CONFIRMED: ${EVOLUS_SANDBOX_CONFIRMED:-false}
+    volumes:
+      - causentra_data:/data
+    restart: unless-stopped
+volumes:
+  causentra_data:
