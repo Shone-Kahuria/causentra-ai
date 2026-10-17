@@ -6,6 +6,7 @@ import os
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
+from app import config  # loads local .env for standalone smoke tests
 
 
 class EvidenceItem(BaseModel):

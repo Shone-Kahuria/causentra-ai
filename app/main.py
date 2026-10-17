@@ -15,6 +15,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from app import config  # loads local .env before DB_PATH and request handling
 from app import evolus, inference
 from app.evaluation import evaluate
 
