@@ -86,6 +86,37 @@ def test_event_validation_and_tenant_reference(client):
     assert client.post("/api/v1/events", json=changed, headers=auth()).status_code == 409
 
 
+def test_adjustable_simulation_and_incident_pagination(client, monkeypatch):
+    first_id = client.post("/api/v1/events", json=event(), headers=auth()).json()["incident_id"]
+    second = event()
+    second["external_id"] = "demo-delay-002"
+    second_id = client.post("/api/v1/events", json=second, headers=auth()).json()["incident_id"]
+    page = client.get("/api/v1/incidents?limit=1&offset=0&status=open", headers=auth()).json()
+    assert page["total"] == 2 and len(page["items"]) == 1
+    next_page = client.get("/api/v1/incidents?limit=1&offset=1&status=open", headers=auth()).json()
+    assert {page["items"][0]["id"], next_page["items"][0]["id"]} == {first_id, second_id}
+    assert client.get("/api/v1/incidents?limit=0", headers=auth()).status_code == 422
+
+    custom = client.post("/api/v1/simulations", headers=auth(), json={
+        "incident_id": first_id, "horizon_days": 4, "expedite_units": 2,
+        "expedite_unit_cost_cents": 900}).json()
+    assert custom["demand_units"] == 32
+    assert custom["projected_shortage_units"] == 16
+    expedited = custom["scenarios"][2]
+    assert expedited["shortfall_units"] == 14
+    assert expedited["incremental_cost_cents"] == 1800
+    assert expedited["revenue_exposure_cents"] == 15000
+    assert expedited["orders_delayed"] == 1
+    assert expedited["score_cents"] == 19300
+    assert client.post("/api/v1/simulations", headers=auth(), json={
+        "incident_id": first_id, "horizon_days": 1}).status_code == 422
+    monkeypatch.setenv("CAUSENTRA_TOKENS_JSON", json.dumps({
+        "other-token": {"role": "manager", "actor": "other", "organization_id": "other-org"}}))
+    other = {"Authorization": "Bearer other-token"}
+    assert client.post("/api/v1/simulations", headers=other, json={"incident_id": first_id}).status_code == 404
+    assert client.get("/api/v1/incidents", headers=other).json()["total"] == 0
+
+
 def test_tenant_boundaries_and_auditor_read_only(client, monkeypatch):
     monkeypatch.setenv("CAUSENTRA_TOKENS_JSON", json.dumps({
         "other-token": {"role": "manager", "actor": "other-manager", "organization_id": "other-org"},

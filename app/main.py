@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from app import config  # loads local .env before DB_PATH and request handling
@@ -195,6 +195,16 @@ class DelayEvent(BaseModel):
     occurred_at: datetime
 
 
+class SimulationRequest(BaseModel):
+    incident_id: str
+    horizon_days: int = Field(default=3, ge=2, le=14)
+    expedite_units: int | None = Field(default=None, ge=0, le=1000)
+    expedite_unit_cost_cents: int = Field(default=750, ge=0, le=100000)
+    revenue_exposure_weight: int = Field(default=1, ge=0, le=10)
+    intervention_cost_weight: int = Field(default=1, ge=0, le=10)
+    order_delay_penalty_cents: int = Field(default=2500, ge=0, le=100000)
+
+
 def find_incident(conn, incident_id: str, organization_id: str):
     row = conn.execute("""SELECT i.*, e.supplier_id, e.purchase_order_id, e.delay_days, e.occurred_at,
                           e.external_id, p.product_id, p.quantity AS inbound_quantity,
@@ -206,10 +216,11 @@ def find_incident(conn, incident_id: str, organization_id: str):
     return dict(row)
 
 
-def calculate(conn, incident, organization_id: str):
+def calculate(conn, incident, organization_id: str, options: SimulationRequest | None = None):
     inventory = conn.execute("SELECT * FROM inventory WHERE product_id=?", (incident["product_id"],)).fetchone()
     orders = conn.execute("SELECT * FROM customer_orders WHERE product_id=? AND organization_id=? ORDER BY priority", (incident["product_id"], organization_id)).fetchall()
-    horizon = 3
+    options = options or SimulationRequest(incident_id=incident["id"])
+    horizon = options.horizon_days
     history = [r["units"] for r in conn.execute("SELECT units FROM demand_history WHERE product_id=? AND organization_id=? ORDER BY day_index", (incident["product_id"], organization_id))]
     daily = round(sum(history) / len(history)) if history else inventory["daily_demand"]
     demand = daily * horizon
@@ -225,8 +236,8 @@ def calculate(conn, incident, organization_id: str):
     if receipt_day <= horizon:
         available += incident["inbound_quantity"]
     shortage = max(0, demand - available)
-    def order_exposure(priority_first: bool):
-        allocation = max(0, available)
+    def order_exposure(supply: int, priority_first: bool):
+        allocation = max(0, supply)
         ordered = sorted(orders, key=lambda item: (item["priority"] != "high") if priority_first else (item["priority"] == "high"))
         exposure, delayed = 0, 0
         for order in ordered:
@@ -236,9 +247,10 @@ def calculate(conn, incident, organization_id: str):
             exposure += missing * order["unit_price_cents"]
             delayed += int(missing > 0)
         return exposure, delayed
-    wait_exposure, wait_delayed = order_exposure(False)
-    priority_exposure, priority_delayed = order_exposure(True)
-    expedite_qty = shortage
+    wait_exposure, wait_delayed = order_exposure(available, False)
+    priority_exposure, priority_delayed = order_exposure(available, True)
+    expedite_qty = shortage if options.expedite_units is None else options.expedite_units
+    expedite_exposure, expedite_delayed = order_exposure(available + expedite_qty, True)
     scenarios = [
         {"id": "wait", "name": "Wait for supplier", "shortfall_units": shortage,
          "incremental_cost_cents": 0, "revenue_exposure_cents": wait_exposure,
@@ -249,15 +261,19 @@ def calculate(conn, incident, organization_id: str):
          "orders_delayed": priority_delayed,
          "assumption": "High-priority orders receive current stock first; total supply is unchanged."},
         {"id": "expedite", "name": "Sandbox expedited supply", "shortfall_units": max(0, shortage - expedite_qty),
-         "incremental_cost_cents": expedite_qty * 750, "revenue_exposure_cents": 0,
-         "orders_delayed": 0,
-         "assumption": f"Alternative supplies {expedite_qty} units by day 2 at $7.50 incremental cost per unit."},
+         "incremental_cost_cents": expedite_qty * options.expedite_unit_cost_cents,
+         "revenue_exposure_cents": expedite_exposure, "orders_delayed": expedite_delayed,
+         "assumption": f"Alternative supplies {expedite_qty} units by day 2 at ${options.expedite_unit_cost_cents / 100:.2f} incremental cost per unit; high-priority orders receive supply first."},
     ]
     for scenario in scenarios:
-        scenario["score_cents"] = scenario["revenue_exposure_cents"] + scenario["incremental_cost_cents"] + scenario["orders_delayed"] * 2500
+        scenario["score_cents"] = (scenario["revenue_exposure_cents"] * options.revenue_exposure_weight
+                                   + scenario["incremental_cost_cents"] * options.intervention_cost_weight
+                                   + scenario["orders_delayed"] * options.order_delay_penalty_cents)
     return {"horizon_days": horizon, "daily_demand_units": daily, "forecast": forecast,
             "demand_units": demand, "available_units": available, "projected_shortage_units": shortage,
-            "currency": "USD", "score_weights": {"revenue_exposure": 1, "incremental_cost": 1, "order_delay_penalty_cents": 2500},
+            "currency": "USD", "score_weights": {"revenue_exposure": options.revenue_exposure_weight,
+                "incremental_cost": options.intervention_cost_weight,
+                "order_delay_penalty_cents": options.order_delay_penalty_cents},
             "scenarios": scenarios}
 
 
@@ -310,6 +326,20 @@ def dashboard(user=Depends(identity)):
 def incident_detail(incident_id: str, user=Depends(identity)):
     with db() as conn:
         return find_incident(conn, incident_id, user["organization_id"])
+
+
+@app.get("/api/v1/incidents")
+def list_incidents(limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0),
+                   status: Literal["open", "resolved"] | None = None, user=Depends(identity)):
+    org = user["organization_id"]
+    where = "WHERE organization_id=?" + (" AND status=?" if status else "")
+    params = (org, status) if status else (org,)
+    with db() as conn:
+        total = conn.execute(f"SELECT COUNT(*) FROM incidents {where}", params).fetchone()[0]
+        items = [dict(row) for row in conn.execute(
+            f"SELECT * FROM incidents {where} ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset))]
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/v1/incidents/{incident_id}/evidence")
@@ -414,6 +444,13 @@ def simulations(incident_id: str, user=Depends(identity)):
     with db() as conn:
         org = user["organization_id"]
         return calculate(conn, find_incident(conn, incident_id, org), org)
+
+
+@app.post("/api/v1/simulations")
+def simulate(request: SimulationRequest, user=Depends(identity)):
+    with db() as conn:
+        org = user["organization_id"]
+        return calculate(conn, find_incident(conn, request.incident_id, org), org, request)
 
 
 @app.post("/api/v1/incidents/{incident_id}/proposals", status_code=201)
