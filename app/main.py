@@ -347,7 +347,8 @@ def investigate(incident_id: str, user=Depends(operator)):
                           "run_id": run_id, "trace_id": trace_id, **report.model_dump(),
                           "projected_shortage_units": result["projected_shortage_units"],
                           "model_id": metadata["model_id"], "provider_request_id": metadata["provider_request_id"],
-                          "evidence_hash": evidence_hash, "prompt_version": "investigator-v1"}
+                          "evidence_hash": evidence_hash, "prompt_version": "investigator-v1",
+                          "grounding_status": "citation_ids_validated; semantic_support_requires_review"}
                 conn.execute("""INSERT INTO agent_runs
                              (id,organization_id,incident_id,trace_id,status,model_id,latency_ms,response_json,error_code,created_at,provider_request_id,usage_json,evidence_hash,prompt_version)
                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
