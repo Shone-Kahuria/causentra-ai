@@ -2,6 +2,8 @@
 
 Runnable vertical slice of the synthetic supplier delay scenario. It demonstrates event ingestion, an evidence path, deterministic simulation, manager approval, sandbox execution, an audit trail, replay, and a small rules baseline evaluation. An AMD inference adapter is implemented but needs an approved endpoint and credentials before it can be called live. Without these, the investigation endpoint explicitly reports a rules-only precheck.
 
+[Watch the captioned demo](submission/media/demo.mp4) · [View the six-slide pitch](submission/media/pitch.pdf) · [See the cover](submission/media/cover.png). The app is available from source for local or Docker use; no public service is hosted.
+
 ## Run locally
 
 Requires Python 3.12+.
@@ -44,7 +46,7 @@ The seeded product starts with 20 units on hand, 4 reserved, seven days of synth
 ## Remaining external gates
 
 1. Set the three Token Factory variables and run `python -m app.smoke_amd`; save the non-secret trace metadata as proof of a real AMD call.
-2. Add the deployed application URL and public repository to the hackathon submission. Live hosting and publication require the user's account access.
+2. Add the public repository and locally recorded demo to the hackathon submission. Public app hosting is outside the current submission.
 3. If entering the Evolus partner track, configure its event workspace and verify two live building-block calls. The main challenge does not require Evolus.
 
 The current application is a synthetic hackathon demo, not a production ERP. OIDC, PostgreSQL, queue workers, and larger held-out evaluations remain outside this local deliverable.

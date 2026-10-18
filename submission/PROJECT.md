@@ -1,7 +1,7 @@
 # Causentra AI — submission copy
 
 **Challenge:** Reinvent Commerce
-**Status:** Local working prototype. AMD live trace and public application URL pending account setup.
+**Status:** Local working prototype and public source repository. AMD live trace pending Token Factory access; no public app hosting requested.
 
 ## Short description
 
@@ -31,7 +31,7 @@ AMD Developer Cloud / Token Factory (pending live verification), Python, FastAPI
 
 - Successful `python -m app.smoke_amd` output with trace ID, model ID, citation IDs, and token usage.
 - Screenshot or recording of a completed AMD investigation and `GET /api/v1/agent-runs/{id}` metadata.
-- Public GitHub repository and working demo URL.
+- Public GitHub repository, captioned demo video, and locally runnable prototype.
 - Container build result and `python -m pytest -q` result.
 - If selecting the Evolus partner track: event workspace with connected AMD model, two building blocks, and API execution IDs.
 
