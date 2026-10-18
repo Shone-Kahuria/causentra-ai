@@ -78,7 +78,19 @@ slides.append(im)
 
 for index, image in enumerate(slides, 1):
     image.save(OUT / f"slide-{index:02}.png", optimize=True)
-slides[0].save(OUT / "cover.png", optimize=True)
+cover = Image.new("RGB", (W, H), BG)
+cd = ImageDraw.Draw(cover)
+cd.rectangle((0, 0, W, 18), fill=CYAN)
+for label, y, size, color, heavy in [
+    ("CAUSENTRA AI", 170, 54, CYAN, True),
+    ("See the disruption early", 290, 70, WHITE, True),
+    ("Evidence-linked supply intelligence", 405, 38, MUTED, False),
+    ("DETECT  /  COMPARE  /  CONTROL", 570, 36, GOLD, True),
+]:
+    face = font(size, heavy)
+    width = cd.textbbox((0, 0), label, font=face)[2]
+    cd.text(((W-width)/2, y), label, font=face, fill=color)
+cover.save(OUT / "cover.png", optimize=True)
 
 pdf = canvas.Canvas(str(OUT / "pitch.pdf"), pagesize=(960, 540))
 for index in range(1, len(slides)+1):
