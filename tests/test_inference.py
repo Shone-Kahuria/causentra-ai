@@ -51,3 +51,23 @@ def test_amd_adapter_retries_without_json_mode_when_gateway_rejects_it(monkeypat
     _, metadata = inference.investigate([{"id": "E-1", "type": "event", "content": {"delay_days": 3}}], "trace-1")
     assert seen == [True, False]
     assert metadata["json_mode_supported"] is False
+
+
+def test_amd_adapter_rejects_malformed_evidence_before_network_call(monkeypatch):
+    monkeypatch.setenv("AMD_CHAT_COMPLETIONS_URL", "https://amd.example/v1/chat/completions")
+    monkeypatch.setenv("AMD_MODEL_ID", "open-model")
+    monkeypatch.setenv("AMD_API_KEY", "test-secret")
+    with pytest.raises(inference.InferenceError, match="Evidence packet failed validation"):
+        inference.investigate([{"id": "E-1", "content": {}}], "trace-1")
+
+
+def test_amd_adapter_reports_malformed_provider_payload(monkeypatch):
+    monkeypatch.setenv("AMD_CHAT_COMPLETIONS_URL", "https://amd.example/v1/chat/completions")
+    monkeypatch.setenv("AMD_MODEL_ID", "open-model")
+    monkeypatch.setenv("AMD_API_KEY", "test-secret")
+
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, json={"choices": []}))
+    original = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kw: original(transport=transport, **kw))
+    with pytest.raises(inference.InferenceError, match="failed validation or transport"):
+        inference.investigate([{"id": "E-1", "type": "event", "content": {}}], "trace-1")

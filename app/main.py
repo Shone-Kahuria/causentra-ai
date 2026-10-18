@@ -34,9 +34,12 @@ app = FastAPI(title="Causentra AI", version="0.1.0", lifespan=lifespan)
 
 @contextmanager
 def db():
-    connection = sqlite3.connect(DB_PATH)
+    connection = sqlite3.connect(DB_PATH, timeout=10)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA busy_timeout = 10000")
+    if DB_PATH != Path(":memory:"):
+        connection.execute("PRAGMA journal_mode = WAL")
     try:
         yield connection
         connection.commit()
@@ -155,6 +158,8 @@ def identity(authorization: str | None = Header(default=None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Bearer token required")
     token = authorization[7:]
+    if not token or token != token.strip() or " " in token:
+        raise HTTPException(401, "Invalid bearer token")
     try:
         extra_tokens = json.loads(os.getenv("CAUSENTRA_TOKENS_JSON", "{}"))
         if not isinstance(extra_tokens, dict):
@@ -339,7 +344,9 @@ def list_incidents(limit: int = Query(default=20, ge=1, le=100), offset: int = Q
         items = [dict(row) for row in conn.execute(
             f"SELECT * FROM incidents {where} ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?",
             (*params, limit, offset))]
-    return {"items": items, "total": total, "limit": limit, "offset": offset}
+    next_offset = offset + len(items) if offset + len(items) < total else None
+    return {"items": items, "total": total, "limit": limit, "offset": offset,
+            "next_offset": next_offset}
 
 
 @app.get("/api/v1/incidents/{incident_id}/evidence")
@@ -378,14 +385,14 @@ def investigate(incident_id: str, user=Depends(operator)):
                           "run_id": run_id, "trace_id": trace_id, **report.model_dump(),
                           "projected_shortage_units": result["projected_shortage_units"],
                           "model_id": metadata["model_id"], "provider_request_id": metadata["provider_request_id"],
-                          "evidence_hash": evidence_hash, "prompt_version": "investigator-v1",
+                          "evidence_hash": evidence_hash, "prompt_version": inference.PROMPT_VERSION,
                           "grounding_status": "citation_ids_validated; semantic_support_requires_review"}
                 conn.execute("""INSERT INTO agent_runs
                              (id,organization_id,incident_id,trace_id,status,model_id,latency_ms,response_json,error_code,created_at,provider_request_id,usage_json,evidence_hash,prompt_version)
                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                              (run_id, org, incident_id, trace_id, "completed", metadata["model_id"],
                               int((time.monotonic()-started)*1000), json.dumps(output), None, now(),
-                              metadata["provider_request_id"], json.dumps(metadata["usage"]), evidence_hash, "investigator-v1"))
+                              metadata["provider_request_id"], json.dumps(metadata["usage"]), evidence_hash, inference.PROMPT_VERSION))
                 audit(conn, org, user["actor"], "investigation.run", run_id, "completed")
                 return output
             except inference.InferenceError as exc:
@@ -393,7 +400,7 @@ def investigate(incident_id: str, user=Depends(operator)):
                              (id,organization_id,incident_id,trace_id,status,model_id,latency_ms,response_json,error_code,created_at,evidence_hash,prompt_version)
                              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                              (run_id, org, incident_id, trace_id, "failed", os.getenv("AMD_MODEL_ID"),
-                              int((time.monotonic()-started)*1000), None, str(exc), now(), evidence_hash, "investigator-v1"))
+                              int((time.monotonic()-started)*1000), None, str(exc), now(), evidence_hash, inference.PROMPT_VERSION))
                 audit(conn, org, user["actor"], "investigation.run", run_id, "failed")
                 conn.commit()  # Keep the failed trace even though the request returns 502.
                 raise HTTPException(502, {"message": str(exc), "run_id": run_id, "trace_id": trace_id})

@@ -93,8 +93,10 @@ def test_adjustable_simulation_and_incident_pagination(client, monkeypatch):
     second_id = client.post("/api/v1/events", json=second, headers=auth()).json()["incident_id"]
     page = client.get("/api/v1/incidents?limit=1&offset=0&status=open", headers=auth()).json()
     assert page["total"] == 2 and len(page["items"]) == 1
+    assert page["next_offset"] == 1
     next_page = client.get("/api/v1/incidents?limit=1&offset=1&status=open", headers=auth()).json()
     assert {page["items"][0]["id"], next_page["items"][0]["id"]} == {first_id, second_id}
+    assert next_page["next_offset"] is None
     assert client.get("/api/v1/incidents?limit=0", headers=auth()).status_code == 422
 
     custom = client.post("/api/v1/simulations", headers=auth(), json={
@@ -131,6 +133,11 @@ def test_tenant_boundaries_and_auditor_read_only(client, monkeypatch):
     assert client.get(f"/api/v1/incidents/{incident_id}", headers=auditor).status_code == 200
     assert client.post(f"/api/v1/incidents/{incident_id}/proposals", headers=auditor).status_code == 403
     assert client.post("/api/v1/events", json=event(), headers=auditor).status_code == 403
+
+
+def test_rejects_malformed_bearer_tokens(client):
+    assert client.get("/api/v1/dashboard", headers={"Authorization": "Bearer "}).status_code == 401
+    assert client.get("/api/v1/dashboard", headers={"Authorization": "Bearer token with spaces"}).status_code == 401
 
 
 def test_manager_cannot_self_approve(client):

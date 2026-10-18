@@ -13,7 +13,7 @@ ALLOWED = {
 }
 
 
-def load_local_env(path: Path = ROOT / ".env"):
+def load_local_env(path: Path = ROOT / ".env") -> None:
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():

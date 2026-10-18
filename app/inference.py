@@ -33,6 +33,9 @@ class InferenceError(Exception):
     pass
 
 
+PROMPT_VERSION = "investigator-v1"
+
+
 def configured() -> bool:
     return all(os.getenv(name) for name in ("AMD_CHAT_COMPLETIONS_URL", "AMD_MODEL_ID", "AMD_API_KEY"))
 
@@ -41,8 +44,11 @@ def investigate(evidence: list[dict], trace_id: str) -> tuple[Investigation, dic
     """Return validated JSON plus non-sensitive trace metadata; no actions are accepted."""
     if not configured():
         raise InferenceError("AMD inference is not configured")
-    allowed = {item["id"] for item in evidence}
-    packet = [EvidenceItem.model_validate(item).model_dump() for item in evidence]
+    try:
+        packet = [EvidenceItem.model_validate(item).model_dump() for item in evidence]
+    except ValidationError as exc:
+        raise InferenceError("Evidence packet failed validation") from exc
+    allowed = {item["id"] for item in packet}
     prompt = (
         "Investigate this synthetic supplier disruption. Return only JSON with keys summary, "
         "hypotheses (claim, evidence_ids, confidence 0..1, alternatives), missing_information, "
@@ -75,5 +81,5 @@ def investigate(evidence: list[dict], trace_id: str) -> tuple[Investigation, dic
                     "model_id": data.get("model", os.environ["AMD_MODEL_ID"]),
                     "usage": data.get("usage", {}), "json_mode_supported": json_mode_supported}
         return result, metadata
-    except (httpx.HTTPError, KeyError, IndexError, ValueError, ValidationError) as exc:
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, ValidationError) as exc:
         raise InferenceError(f"AMD inference failed validation or transport: {type(exc).__name__}") from exc
