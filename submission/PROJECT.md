@@ -1,7 +1,9 @@
 # Causentra AI — submission copy
 
 **Challenge:** Reinvent Commerce
-**Status:** Local working prototype and public source repository. AMD live trace pending Token Factory access; no public app hosting requested.
+**Status:** Submitted to the AMD Developer Hackathon ACT III on lablab.ai. Local working prototype and public source repository; AMD live trace pending Token Factory access. No public app hosting requested.
+
+**Published submission:** https://lablab.ai/ai-hackathons/amd-developer-hackathon-act-iii/causentra-ai/causentra-ai
 
 ## Short description
 
